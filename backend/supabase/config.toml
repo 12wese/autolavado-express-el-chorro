@@ -1,0 +1,12 @@
+# Identificador del proyecto local; no vincula ni despliega un proyecto remoto.
+project_id = "autolavado-express-local"
+
+[functions.recognize-plate]
+verify_jwt = true
+
+[functions.fuseki-proxy]
+verify_jwt = true
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]

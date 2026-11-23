@@ -1,0 +1,1 @@
+ALTER TABLE public.wash_jobs ADD COLUMN IF NOT EXISTS license_plate text NOT NULL DEFAULT '';

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Autolavado Express El Chorro</string>
+    <string name="title_activity_main">Autolavado Express El Chorro</string>
+    <string name="package_name">com.elchorro.autolavado</string>
+    <string name="custom_url_scheme">com.elchorro.autolavado</string>
+</resources>
