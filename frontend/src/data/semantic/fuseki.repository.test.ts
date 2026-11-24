@@ -52,6 +52,38 @@ describe("Fuseki repository proxy", () => {
     });
   });
 
+  it("extracts bindings nested under response.data", async () => {
+    const binding = { type: "literal", value: "ABC123" };
+    invokeMock.mockResolvedValue({
+      data: { data: { head: { vars: ["plate"] }, results: { bindings: [{ plate: binding }] } } },
+      error: null,
+    });
+
+    await expect(runSparqlQuery("SELECT ?plate WHERE { ?vehicle ?p ?plate }"))
+      .resolves.toMatchObject({
+        head: { vars: ["plate"] },
+        results: { bindings: [{ plate: binding }] },
+      });
+  });
+
+  it("accepts a direct array of result bindings", async () => {
+    invokeMock.mockResolvedValue({
+      data: [{ plate: "ABC123", serviceType: "Lavada" }],
+      error: null,
+    });
+
+    await expect(runSparqlQuery("SELECT ?plate WHERE { ?vehicle ?p ?plate }"))
+      .resolves.toMatchObject({
+        head: { vars: ["plate", "serviceType"] },
+        results: {
+          bindings: [{
+            plate: { type: "literal", value: "ABC123" },
+            serviceType: { type: "literal", value: "Lavada" },
+          }],
+        },
+      });
+  });
+
   it("sends the mapped wash job as an update through the proxy", async () => {
     invokeMock.mockResolvedValue({ data: { ok: true }, error: null });
 

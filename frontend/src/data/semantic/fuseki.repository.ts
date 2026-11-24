@@ -53,25 +53,49 @@ async function invokeFusekiProxy<T>(request: FusekiProxyRequest): Promise<T> {
   return data;
 }
 
-function parseSelectResults(value: unknown): SparqlSelectResults {
-  if (!isRecord(value)
-    || !isRecord(value.head)
-    || !Array.isArray(value.head.vars)
-    || !isRecord(value.results)
-    || !Array.isArray(value.results.bindings)) {
+function getBindings(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (!isRecord(value)) {
     throw new Error("Fuseki returned an invalid SPARQL results document.");
   }
+  if (isRecord(value.results) && Array.isArray(value.results.bindings)) {
+    return value.results.bindings;
+  }
+  if (isRecord(value.data)
+    && isRecord(value.data.results)
+    && Array.isArray(value.data.results.bindings)) {
+    return value.data.results.bindings;
+  }
+  if (Array.isArray(value.bindings)) return value.bindings;
+  throw new Error("Fuseki response does not contain SPARQL bindings.");
+}
 
-  const variables: string[] = value.head.vars.map((variable: unknown) => {
-    if (typeof variable !== "string") {
-      throw new Error("Fuseki returned an invalid SPARQL variable list.");
-    }
-    return variable;
-  });
-  const bindings: SparqlBinding[] = value.results.bindings.map((row: unknown) => {
+function getResponseHead(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  if (isRecord(value.head)) return value.head;
+  if (isRecord(value.data) && isRecord(value.data.head)) return value.data.head;
+  return null;
+}
+
+function parseSelectResults(value: unknown): SparqlSelectResults {
+  const rawBindings = getBindings(value);
+  const head = getResponseHead(value);
+  const variables = Array.isArray(head?.vars)
+    ? head.vars.map((variable: unknown) => {
+      if (typeof variable !== "string") {
+        throw new Error("Fuseki returned an invalid SPARQL variable list.");
+      }
+      return variable;
+    })
+    : [];
+  const bindings: SparqlBinding[] = rawBindings.map((row: unknown) => {
     if (!isRecord(row)) throw new Error("Fuseki returned an invalid SPARQL result row.");
     const parsedRow: SparqlBinding = {};
     for (const [variable, binding] of Object.entries(row)) {
+      if (typeof binding === "string") {
+        parsedRow[variable] = { type: "literal", value: binding };
+        continue;
+      }
       if (!isRecord(binding) || typeof binding.type !== "string"
         || typeof binding.value !== "string") {
         throw new Error("Fuseki returned an invalid SPARQL binding.");
@@ -88,8 +112,11 @@ function parseSelectResults(value: unknown): SparqlSelectResults {
     return parsedRow;
   });
 
+  const resolvedVariables = variables.length > 0
+    ? variables
+    : [...new Set(bindings.flatMap((row) => Object.keys(row)))];
   return {
-    head: { vars: variables },
+    head: { vars: resolvedVariables },
     results: { bindings },
   };
 }

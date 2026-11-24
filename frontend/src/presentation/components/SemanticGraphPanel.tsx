@@ -1,24 +1,36 @@
 import { useState } from "react";
-import { CheckCircle2, Loader2, Play, RefreshCw, Search, XCircle } from "lucide-react";
+import {
+  CheckCircle2,
+  Database,
+  Loader2,
+  Play,
+  RefreshCw,
+  Search,
+  XCircle,
+} from "lucide-react";
 import { useSemanticGraph } from "@/application/hooks/useSemanticGraph";
 import { normalizeLicensePlate } from "@/domain/validators/vehicle-qr.validator";
 import {
   historyByPlateQuery,
   initialCustomQuery,
   ontologyTriplesQuery,
-  washJobsQuery,
+  washJobsQuery as buildWashJobsQuery,
 } from "@/domain/semantic/wash-job-queries";
 import type { SparqlBindingValue } from "@/domain/semantic/sparql-results";
 import { Button } from "@/presentation/ui/button";
 import { Input } from "@/presentation/ui/input";
 import { Textarea } from "@/presentation/ui/textarea";
 
+interface SemanticGraphPanelProps {
+  businessId: string;
+}
+
 function getBindingValue(binding: SparqlBindingValue | undefined): string {
   if (!binding) return "—";
   return binding.value;
 }
 
-export function SemanticGraphPanel() {
+export function SemanticGraphPanel({ businessId }: SemanticGraphPanelProps) {
   const {
     connected,
     checkingConnection,
@@ -28,8 +40,14 @@ export function SemanticGraphPanel() {
     queryError,
     querying,
     executeQuery,
-  } = useSemanticGraph();
+    synchronizing,
+    syncResult,
+    syncError,
+    synchronizeExistingJobs,
+  } = useSemanticGraph(businessId);
   const [plate, setPlate] = useState("");
+  const [customer, setCustomer] = useState("");
+  const [service, setService] = useState("");
   const [query, setQuery] = useState(initialCustomQuery);
 
   const run = (sparql: string) => {
@@ -78,18 +96,45 @@ export function SemanticGraphPanel() {
           <Button type="button" variant="outline" onClick={() => run(ontologyTriplesQuery)}>
             Listar tripletas de la ontología
           </Button>
-          <Button type="button" variant="outline" onClick={() => run(washJobsQuery)}>
+          <Button type="button" variant="outline" onClick={() => run(buildWashJobsQuery())}>
             Trabajos de lavado registrados
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void synchronizeExistingJobs()}
+            disabled={synchronizing}
+          >
+            {synchronizing
+              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              : <Database className="mr-2 h-4 w-4" />}
+            Sincronizar lavados de Supabase
+          </Button>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="grid gap-2 sm:grid-cols-3">
           <Input
             aria-label="Placa para consultar historial semántico"
-            placeholder="Placa para consultar historial"
+            placeholder="Placa"
             value={plate}
             onChange={(event) => setPlate(event.target.value)}
             maxLength={20}
           />
+          <Input
+            aria-label="Cliente para filtrar trabajos semánticos"
+            placeholder="Cliente"
+            value={customer}
+            onChange={(event) => setCustomer(event.target.value)}
+            maxLength={120}
+          />
+          <Input
+            aria-label="Servicio para filtrar trabajos semánticos"
+            placeholder="Servicio"
+            value={service}
+            onChange={(event) => setService(event.target.value)}
+            maxLength={120}
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             variant="outline"
@@ -98,7 +143,29 @@ export function SemanticGraphPanel() {
           >
             Historial por placa
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!normalizedPlate && !customer.trim() && !service.trim()}
+            onClick={() => run(buildWashJobsQuery({ plate, customer, service }))}
+          >
+            Filtrar trabajos
+          </Button>
         </div>
+        {syncError && (
+          <p role="alert" className="text-sm text-destructive">{syncError}</p>
+        )}
+        {syncResult && (
+          <p
+            role={syncResult.failures.length > 0 ? "alert" : "status"}
+            className="text-sm text-muted-foreground"
+          >
+            Sincronizados {syncResult.synced} de {syncResult.total} trabajos.
+            {syncResult.failures.length > 0
+              ? ` Errores: ${syncResult.failures.slice(0, 3).join("; ")}`
+              : ""}
+          </p>
+        )}
       </section>
 
       <section className="space-y-3 rounded-lg border bg-card p-4">

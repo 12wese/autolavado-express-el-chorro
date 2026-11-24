@@ -1,6 +1,9 @@
 import type { WashJob } from "@/domain/entities/wash-job.entity";
 import { syncWashJobToFuseki } from "@/data/semantic/fuseki.repository";
-import { fetchWashJobById } from "@/data/repositories/wash-jobs.repository";
+import {
+  fetchAllWashJobs,
+  fetchWashJobById,
+} from "@/data/repositories/wash-jobs.repository";
 
 function getSemanticSyncInput(washJob: WashJob) {
   return {
@@ -29,4 +32,33 @@ export function scheduleWashJobSemanticSync(washJob: WashJob): void {
 
 export function scheduleWashJobSemanticSyncById(businessId: string, washJobId: string): void {
   void syncInBackground(fetchWashJobById(businessId, washJobId));
+}
+
+export interface ExistingWashJobsSyncResult {
+  total: number;
+  synced: number;
+  failures: string[];
+}
+
+export async function syncExistingWashJobsToFuseki(
+  businessId: string,
+): Promise<ExistingWashJobsSyncResult> {
+  const washJobs = await fetchAllWashJobs(businessId);
+  const result: ExistingWashJobsSyncResult = {
+    total: washJobs.length,
+    synced: 0,
+    failures: [],
+  };
+
+  for (const washJob of washJobs) {
+    try {
+      await syncWashJobToFuseki(getSemanticSyncInput(washJob));
+      result.synced += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error desconocido";
+      result.failures.push(`${washJob.license_plate}: ${message}`);
+    }
+  }
+
+  return result;
 }

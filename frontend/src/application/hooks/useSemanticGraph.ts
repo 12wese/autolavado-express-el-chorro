@@ -4,14 +4,21 @@ import {
   runSparqlQuery,
 } from "@/data/semantic/fuseki.repository";
 import type { SparqlSelectResults } from "@/domain/semantic/sparql-results";
+import {
+  syncExistingWashJobsToFuseki,
+  type ExistingWashJobsSyncResult,
+} from "@/application/services/wash-job-semantic-sync.service";
 
-export function useSemanticGraph() {
+export function useSemanticGraph(businessId: string) {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [checkingConnection, setCheckingConnection] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [results, setResults] = useState<SparqlSelectResults | null>(null);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [querying, setQuerying] = useState(false);
+  const [synchronizing, setSynchronizing] = useState(false);
+  const [syncResult, setSyncResult] = useState<ExistingWashJobsSyncResult | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const refreshHealth = useCallback(async () => {
     setCheckingConnection(true);
@@ -49,6 +56,25 @@ export function useSemanticGraph() {
     }
   }, []);
 
+  const synchronizeExistingJobs = useCallback(async () => {
+    setSynchronizing(true);
+    setSyncResult(null);
+    setSyncError(null);
+    try {
+      const result = await syncExistingWashJobsToFuseki(businessId);
+      setSyncResult(result);
+      await refreshHealth();
+    } catch (error) {
+      setSyncError(
+        error instanceof Error
+          ? error.message
+          : "No se pudieron cargar los trabajos guardados en Supabase.",
+      );
+    } finally {
+      setSynchronizing(false);
+    }
+  }, [businessId, refreshHealth]);
+
   return {
     connected,
     checkingConnection,
@@ -58,5 +84,9 @@ export function useSemanticGraph() {
     queryError,
     querying,
     executeQuery,
+    synchronizing,
+    syncResult,
+    syncError,
+    synchronizeExistingJobs,
   };
 }

@@ -1,48 +1,68 @@
 import { normalizeLicensePlate } from "@/domain/validators/vehicle-qr.validator";
 
-const ontologyPrefix = "PREFIX : <https://elchorro.example/ontologia#>";
-
-export const ontologyTriplesQuery = `${ontologyPrefix}
-SELECT ?subject ?predicate ?object
+export const ontologyTriplesQuery = `SELECT ?subject ?predicate ?object
 WHERE { ?subject ?predicate ?object }
 LIMIT 100`;
 
-export const washJobsQuery = `${ontologyPrefix}
-SELECT ?job ?plate ?vehicleType ?serviceType ?totalPrice ?createdAt ?status
+export interface WashJobSearchFilters {
+  plate?: string;
+  customer?: string;
+  service?: string;
+}
+
+function literal(value: string | undefined): string {
+  return JSON.stringify(value?.trim() ?? "");
+}
+
+export function washJobsQuery(filters: WashJobSearchFilters = {}): string {
+  return `SELECT ?job ?plate ?vehicleType ?serviceType ?totalPrice ?createdAt ?status ?customer
 WHERE {
-  ?job a :TrabajoLavado ;
-    :tieneVehiculo ?vehicle ;
-    :tieneTipoVehiculo ?vehicleTypeResource ;
-    :incluyeServicio ?service ;
-    :tieneEstado ?statusResource ;
-    :precio ?totalPrice ;
-    :fechaCreacion ?createdAt .
-  ?vehicle :tienePlaca ?plate .
-  ?vehicleTypeResource :codigoVehiculo ?vehicleType .
-  ?service :codigoServicio ?serviceType .
-  ?statusResource :codigoEstado ?status .
+  ?job ?typePredicate ?jobType .
+  FILTER(REGEX(STR(?typePredicate), "type$", "i"))
+  FILTER(REGEX(STR(?jobType), "TrabajoLavado$", "i"))
+
+  ?job ?vehiclePredicate ?vehicle .
+  FILTER(REGEX(STR(?vehiclePredicate), "tieneVehiculo$", "i"))
+  ?vehicle ?platePredicate ?plate .
+  FILTER(REGEX(STR(?platePredicate), "tienePlaca$", "i"))
+  FILTER(CONTAINS(UCASE(STR(?plate)), UCASE(${literal(filters.plate)})))
+
+  ?job ?vehicleTypePredicate ?vehicleTypeResource .
+  FILTER(REGEX(STR(?vehicleTypePredicate), "tieneTipoVehiculo$", "i"))
+  ?vehicleTypeResource ?vehicleCodePredicate ?vehicleType .
+  FILTER(REGEX(STR(?vehicleCodePredicate), "codigoVehiculo$", "i"))
+
+  ?job ?servicePredicate ?service .
+  FILTER(REGEX(STR(?servicePredicate), "incluyeServicio$", "i"))
+  ?service ?serviceCodePredicate ?serviceType .
+  FILTER(REGEX(STR(?serviceCodePredicate), "codigoServicio$", "i"))
+  FILTER(CONTAINS(UCASE(STR(?serviceType)), UCASE(${literal(filters.service)})))
+
+  ?job ?statusPredicate ?statusResource .
+  FILTER(REGEX(STR(?statusPredicate), "tieneEstado$", "i"))
+  ?statusResource ?statusCodePredicate ?status .
+  FILTER(REGEX(STR(?statusCodePredicate), "codigoEstado$", "i"))
+
+  ?job ?pricePredicate ?totalPrice .
+  FILTER(REGEX(STR(?pricePredicate), "precio$", "i"))
+  ?job ?createdAtPredicate ?createdAt .
+  FILTER(REGEX(STR(?createdAtPredicate), "fechaCreacion$", "i"))
+
+  OPTIONAL {
+    ?job ?customerPredicate ?customerValue .
+    FILTER(REGEX(STR(?customerPredicate), "(nombreCliente|cliente)$", "i"))
+  }
+  BIND(COALESCE(STR(?customerValue), "") AS ?customer)
+  FILTER(CONTAINS(UCASE(STR(?customer)), UCASE(${literal(filters.customer)})))
 }
 ORDER BY DESC(?createdAt)
 LIMIT 100`;
+}
+
+export const initialCustomQuery = ontologyTriplesQuery;
 
 export function historyByPlateQuery(plate: string): string {
   const normalizedPlate = normalizeLicensePlate(plate);
   if (!normalizedPlate) throw new Error("Vehicle plate is required.");
-
-  return `${ontologyPrefix}
-SELECT ?job ?createdAt ?serviceType ?totalPrice ?status
-WHERE {
-  ?job a :TrabajoLavado ;
-    :tieneVehiculo ?vehicle ;
-    :incluyeServicio ?service ;
-    :tieneEstado ?statusResource ;
-    :precio ?totalPrice ;
-    :fechaCreacion ?createdAt .
-  ?vehicle :tienePlaca ${JSON.stringify(normalizedPlate)} .
-  ?service :codigoServicio ?serviceType .
-  ?statusResource :codigoEstado ?status .
+  return washJobsQuery({ plate: normalizedPlate });
 }
-ORDER BY DESC(?createdAt)`;
-}
-
-export const initialCustomQuery = ontologyTriplesQuery;

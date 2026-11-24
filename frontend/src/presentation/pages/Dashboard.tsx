@@ -229,7 +229,7 @@ export default function Dashboard() {
           )}
           {isAdmin && (
             <TabsContent value="semantic">
-              <SemanticGraphPanel />
+              <SemanticGraphPanel businessId={membership.business_id} />
             </TabsContent>
           )}
         </Tabs>

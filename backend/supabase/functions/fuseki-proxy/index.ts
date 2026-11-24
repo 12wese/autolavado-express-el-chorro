@@ -13,6 +13,7 @@ const corsHeaders = {
   ].join(", "),
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Max-Age": "86400",
+  "Vary": "Origin",
 };
 
 interface FusekiProxyRequest {
@@ -64,39 +65,40 @@ Deno.serve(async (request: Request): Promise<Response> => {
       return jsonResponse({ error: "A valid health, query, or update action is required." }, 400);
     }
 
-    const endpoint = (
-      Deno.env.get("FUSEKI_ENDPOINT")
-      ?? "http://host.docker.internal:3030/Autolavado"
-    ).trim().replace(/\/+$/, "");
-    if (!endpoint) {
+    const base = (Deno.env.get("FUSEKI_ENDPOINT") || "").trim().replace(/\/+$/, "");
+    if (!base) {
       return jsonResponse({ error: "FUSEKI_ENDPOINT is empty." }, 500);
     }
 
     const action = proxyRequest.action;
-    const sparql = action === "health" ? "ASK {}"
-      : action === "query" ? proxyRequest.query
-        : proxyRequest.update;
+    const sparql = action === "health" ? ""
+      : action === "query" ? proxyRequest.query ?? ""
+        : proxyRequest.update ?? "";
     if (!sparql) {
-      return jsonResponse({ error: "SPARQL query or update is required." }, 400);
+      if (action !== "health") {
+        return jsonResponse({ error: "SPARQL query or update is required." }, 400);
+      }
     }
 
-    const response = await fetch(
-      `${endpoint}/${action === "update" ? "update" : "query"}`,
-      {
+    const isUpdate = action === "update";
+    const sparqlQuery = sparql || "ASK WHERE { ?s ?p ?o }";
+    const targetUrl = isUpdate
+      ? `${base}/update`
+      : `${base}/query?query=${encodeURIComponent(sparqlQuery)}`;
+    const response = await fetch(targetUrl, isUpdate
+      ? {
         method: "POST",
-        headers: {
-          "Content-Type": action === "update"
-            ? "application/sparql-update"
-            : "application/sparql-query",
-          Accept: "application/sparql-results+json",
-        },
-        body: sparql,
-      },
-    );
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ update: sparql }).toString(),
+      }
+      : {
+        method: "GET",
+        headers: { "Accept": "application/sparql-results+json" },
+      });
     if (!response.ok) {
-      const detail = (await response.text()).slice(0, 1000);
+      const detail = await response.text();
       return jsonResponse({
-        error: `Fuseki returned HTTP ${response.status}${detail ? `: ${detail}` : "."}`,
+        error: `Fuseki returned HTTP ${response.status} for ${targetUrl}. Response body: ${detail}`,
       }, 502);
     }
 
