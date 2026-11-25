@@ -17,6 +17,7 @@ export async function fetchWasherByToken(token: string): Promise<Washer | null> 
     .from("washers")
     .select("*")
     .eq("qr_token", token)
+    .eq("active", true)
     .maybeSingle();
 
   if (error) throw error;

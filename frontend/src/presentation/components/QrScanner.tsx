@@ -5,6 +5,10 @@ import { BrowserQRCodeReader } from "@zxing/browser";
 import type { IScannerControls } from "@zxing/browser";
 import { BarcodeFormat, BarcodeScanner } from "@capacitor-mlkit/barcode-scanning";
 import { preparePlateOcr, recognizePlateFromImage } from "@/application/services/plate-ocr.service";
+import {
+  acquireManagedCameraStream,
+  releaseManagedCameraStream,
+} from "@/infrastructure/camera/managed-camera-stream";
 import { Button } from "@/presentation/ui/button";
 import { CameraOff, Flashlight, FlashlightOff, Loader2, ScanLine } from "lucide-react";
 
@@ -26,19 +30,21 @@ interface QrScannerProps {
   onDecode: (text: string) => void;
   active: boolean;
   onRecognizePlate?: (imageBase64: string) => Promise<boolean>;
+  qrOnly?: boolean;
 }
 
 export function QrScanner(props: QrScannerProps) {
   if (Capacitor.isNativePlatform()
-    && (!props.onRecognizePlate || !navigator.mediaDevices?.getUserMedia)) {
+    && (!props.qrOnly || !navigator.mediaDevices?.getUserMedia)) {
     return <NativeQrScanner {...props} />;
   }
   return <WebQrScanner {...props} />;
 }
 
-function NativeQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps) {
+function NativeQrScanner({ onDecode, active, onRecognizePlate, qrOnly }: QrScannerProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cameraSlow, setCameraSlow] = useState(false);
   const onDecodeRef = useRef(onDecode);
 
   useEffect(() => {
@@ -48,7 +54,9 @@ function NativeQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps)
   const scanQr = async () => {
     if (!active || busy) return;
     setError(null);
+    setCameraSlow(false);
     setBusy(true);
+    const slowTimer = window.setTimeout(() => setCameraSlow(true), 4000);
     try {
       const { camera } = await BarcodeScanner.requestPermissions();
       if (camera !== "granted" && camera !== "limited") {
@@ -62,7 +70,9 @@ function NativeQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps)
     } catch {
       setError("No se pudo leer el código QR. Revisa los permisos de cámara e inténtalo de nuevo.");
     } finally {
+      window.clearTimeout(slowTimer);
       setBusy(false);
+      setCameraSlow(false);
     }
   };
 
@@ -138,28 +148,38 @@ function NativeQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps)
         <>
           {busy ? <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /> : <ScanLine className="h-8 w-8 text-muted-foreground" />}
           <p role="status" className="text-sm text-muted-foreground">
-            {busy ? "Abriendo cámara y leyendo..." : "Listo para escanear un QR o capturar una placa."}
+            {busy
+              ? cameraSlow
+                ? "La cámara está tardando en iniciar. Mantén la app abierta y verifica los permisos..."
+                : qrOnly ? "Iniciando cámara para leer el QR..." : "Abriendo cámara y leyendo..."
+              : qrOnly
+                ? "Listo para identificar un lavador con su código QR."
+                : "Listo para escanear un QR o capturar una placa."}
           </p>
         </>
       )}
       <div className="grid w-full grid-cols-1 gap-2">
         <Button type="button" variant="outline" onClick={scanQr} disabled={!active || busy}>
-          Escanear código QR
+          {qrOnly ? "Iniciar escáner QR" : "Escanear código QR"}
         </Button>
-        <Button type="button" onClick={capturePlate} disabled={!active || busy}>
-          Escanear placa ahora
-        </Button>
-        {onRecognizePlate && (
-          <Button type="button" variant="outline" onClick={captureAiPlate} disabled={!active || busy}>
-            Capturar ahora
-          </Button>
+        {!qrOnly && (
+          <>
+            <Button type="button" onClick={capturePlate} disabled={!active || busy}>
+              Escanear placa ahora
+            </Button>
+            {onRecognizePlate && (
+              <Button type="button" variant="outline" onClick={captureAiPlate} disabled={!active || busy}>
+                Capturar ahora
+              </Button>
+            )}
+          </>
         )}
       </div>
     </div>
   );
 }
 
-function WebQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps) {
+function WebQrScanner({ onDecode, active, onRecognizePlate, qrOnly }: QrScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -174,11 +194,13 @@ function WebQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps) {
   const ocrTimerRef = useRef<number | null>(null);
   const runOcrRef = useRef<() => Promise<void>>(async () => undefined);
   const aiTimerRef = useRef<number | null>(null);
+  const cameraSlowTimerRef = useRef<number | null>(null);
   const aiBusyRef = useRef(false);
   const aiFailedRef = useRef(false);
   const runAiRef = useRef<() => Promise<void>>(async () => undefined);
   const recognizePlateRef = useRef(onRecognizePlate);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraSlow, setCameraSlow] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [ocrStatus, setOcrStatus] =
     useState<"loading" | "scanning" | "reading" | "error">("loading");
@@ -209,7 +231,7 @@ function WebQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps) {
 
     controlsRef.current?.stop();
     controlsRef.current = null;
-    stream?.getTracks().forEach((streamTrack) => streamTrack.stop());
+    releaseManagedCameraStream(stream);
     if (videoRef.current?.srcObject === stream) videoRef.current.srcObject = null;
     streamRef.current = null;
     videoTrackRef.current = null;
@@ -352,10 +374,10 @@ function WebQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps) {
   useEffect(() => {
     activeRef.current = active;
     if (!active) {
-      controlsRef.current?.stop();
-      controlsRef.current = null;
+      releaseCamera();
       if (ocrTimerRef.current !== null) window.clearTimeout(ocrTimerRef.current);
       if (aiTimerRef.current !== null) window.clearTimeout(aiTimerRef.current);
+      if (cameraSlowTimerRef.current !== null) window.clearTimeout(cameraSlowTimerRef.current);
       return;
     }
 
@@ -370,6 +392,8 @@ function WebQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps) {
     setAiError(null);
     setAiStatus("loading");
     setTorchError(null);
+    setCameraSlow(false);
+    cameraSlowTimerRef.current = window.setTimeout(() => setCameraSlow(true), 5000);
     const reader = new BrowserQRCodeReader();
     const videoConstraints: MediaTrackConstraints = {
       facingMode: { ideal: "environment" },
@@ -379,14 +403,20 @@ function WebQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps) {
 
     const startCamera = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
+        const stream = await acquireManagedCameraStream({
           audio: false,
           video: videoConstraints,
         });
         if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
+          releaseManagedCameraStream(stream);
           return;
         }
+        if (cameraSlowTimerRef.current !== null) {
+          window.clearTimeout(cameraSlowTimerRef.current);
+          cameraSlowTimerRef.current = null;
+        }
+        setCameraSlow(false);
+        setCameraError(null);
 
         streamRef.current = stream;
         const track = stream.getVideoTracks()[0];
@@ -431,7 +461,9 @@ function WebQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps) {
         }
 
         controlsRef.current = controls;
-        if (recognizePlateRef.current) {
+        if (qrOnly) {
+          setOcrStatus("scanning");
+        } else if (recognizePlateRef.current) {
           setAiStatus("scanning");
           aiTimerRef.current = window.setTimeout(() => void runAiRef.current(), 1500);
         } else {
@@ -464,8 +496,9 @@ function WebQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps) {
       releaseCamera();
       if (ocrTimerRef.current !== null) window.clearTimeout(ocrTimerRef.current);
       if (aiTimerRef.current !== null) window.clearTimeout(aiTimerRef.current);
+      if (cameraSlowTimerRef.current !== null) window.clearTimeout(cameraSlowTimerRef.current);
     };
-  }, [active, releaseCamera]);
+  }, [active, qrOnly, releaseCamera]);
 
   const handleManualCapture = () => {
     ocrFailedRef.current = false;
@@ -501,7 +534,12 @@ function WebQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps) {
         </div>
       ) : (
         <div className="relative mx-auto aspect-square w-full max-w-xs overflow-hidden rounded-2xl bg-black">
-          <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
+          <video ref={videoRef} className="h-full w-full object-cover" autoPlay muted playsInline />
+          {cameraSlow && (
+            <p role="status" className="absolute inset-x-3 bottom-3 rounded bg-black/70 px-2 py-1.5 text-center text-xs text-white">
+              La cámara está tardando en iniciar. Verifica sus permisos.
+            </p>
+          )}
           {torchAvailable && (
             <Button
               type="button"
@@ -543,7 +581,11 @@ function WebQrScanner({ onDecode, active, onRecognizePlate }: QrScannerProps) {
           )}
         </div>
       )}
-      {onRecognizePlate ? (
+      {qrOnly ? (
+        <p role="status" aria-live="polite" className="text-center text-sm text-muted-foreground">
+          Enfoca el código QR dentro del visor para identificar al lavador.
+        </p>
+      ) : onRecognizePlate ? (
         <>
           <div className="grid grid-cols-2 gap-2">
             <Button

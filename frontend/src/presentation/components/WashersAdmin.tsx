@@ -5,9 +5,10 @@ import { Card, CardContent } from "@/presentation/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/presentation/ui/dialog";
 import { useWashers } from "@/application/hooks/useWashers";
 import { WasherQrCode } from "@/presentation/components/WasherQrCode";
+import { WasherQrLookup } from "@/presentation/components/WasherQrLookup";
 import type { Washer } from "@/domain/entities/washer.entity";
 import type { BusinessRole } from "@/domain/enums/business-role.enum";
-import { Plus, QrCode, Trash2 } from "lucide-react";
+import { Plus, QrCode, ScanLine, Trash2 } from "lucide-react";
 
 interface WashersAdminProps {
   businessId: string;
@@ -19,6 +20,7 @@ export function WashersAdmin({ businessId, role }: WashersAdminProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [qrWasher, setQrWasher] = useState<Washer | null>(null);
+  const [lookupOpen, setLookupOpen] = useState(false);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,6 +51,15 @@ export function WashersAdmin({ businessId, role }: WashersAdminProps) {
           Agregar
         </Button>
       </form>
+      <Button
+        type="button"
+        variant="outline"
+        className="gap-2"
+        onClick={() => setLookupOpen(true)}
+      >
+        <ScanLine className="h-4 w-4" />
+        Identificar lavador por QR
+      </Button>
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Cargando lavadores...</p>
@@ -98,6 +109,7 @@ export function WashersAdmin({ businessId, role }: WashersAdminProps) {
           )}
         </DialogContent>
       </Dialog>
+      <WasherQrLookup open={lookupOpen} onOpenChange={setLookupOpen} />
     </div>
   );
 }
