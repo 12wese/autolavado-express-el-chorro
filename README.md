@@ -10,15 +10,22 @@ decisiones técnicas que complementan la metodología, no una metodología paral
 
 - [Vite](https://vitejs.dev/) + [React 18](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
 - [Tailwind CSS](https://tailwindcss.com/) + [shadcn/ui](https://ui.shadcn.com/) (componentes sobre Radix UI)
+- [Node.js](https://nodejs.org/) + [Express](https://expressjs.com/) + TypeScript para la API
 - [Supabase](https://supabase.com/) (base de datos Postgres, autenticación y Row Level Security)
 - [React Query](https://tanstack.com/query), [React Router](https://reactrouter.com/), [Zod](https://zod.dev/), [Vitest](https://vitest.dev/)
 
-## Arquitectura de 5 capas
+## Arquitectura desacoplada
+
+El repositorio separa `frontend/`, `backend/` (API Node.js + Express) y `database/`
+(migraciones, funciones de Supabase y ontología RDF). El frontend consume la API mediante
+`VITE_API_URL` (por defecto `http://localhost:4000`); Supabase Auth se mantiene en el
+cliente únicamente para obtener el JWT de la sesión.
+
+### Arquitectura interna del frontend (5 capas)
 
 El código de `frontend/src/` está organizado en cinco capas con responsabilidades separadas.
-La regla que se respeta en todo el proyecto es: **la capa de Presentación no importa
-Supabase ni repositorios directamente**; llama a la capa de Aplicación, que coordina con
-Datos.
+La regla que se respeta en todo el proyecto es: **la capa de Presentación no importa Supabase ni repositorios directamente**; llama a la
+capa de Aplicación, que coordina con Datos.
 
 ```
 frontend/src/
@@ -28,15 +35,16 @@ frontend/src/
 │   ├── rules/            → transiciones de estado válidas, reparto de ganancias
 │   └── validators/       → esquemas Zod de validación (formularios)
 │
-├── data/              # Persistencia: el único lugar que conoce Supabase
-│   └── repositories/     → acceso a Supabase; auth.repository.ts, wash-jobs.repository.ts, etc.
+├── data/              # Acceso a datos a través de la API Express
+│   └── repositories/     → apiClient para datos; Supabase Auth solo para la sesión
 │
 ├── application/       # Casos de uso: conectan dominio + datos, exponen hooks a la UI
 │   ├── hooks/            → useWashJobs, useMonthlyWashJobs, useCreateWashJob, useAuthSession
 │   └── services/         → wash-stats.service.ts, auth.service.ts
 │
 ├── infrastructure/    # Arranque técnico y configuración externa
-│   └── supabase/         → client.ts (cliente de Supabase), types.ts (tipos generados)
+│   ├── api/              → apiClient.ts (JWT, contexto de negocio y HTTP)
+│   └── supabase/         → client.ts (Supabase Auth), types.ts (tipos generados)
 │
 └── presentation/      # UI: páginas y componentes, sin lógica de negocio
     ├── pages/            → Index, Auth, Dashboard, ResetPassword, NotFound
@@ -54,14 +62,14 @@ Ejemplo — mover una tarjeta del tablero Kanban de "Completado" a "Entregado":
 
 1. **Presentación** (`KanbanBoard.tsx`) ofrece únicamente la transición siguiente: `completed` → `delivered`.
 2. **Aplicación** (`useWashJobs.ts`) valida que el estado destino sea el siguiente permitido y orquesta la actualización local.
-3. **Datos** (`wash-jobs.repository.ts`) llama la RPC de avance de estado.
-4. **Infraestructura** (`infrastructure/supabase/client.ts`) es el cliente que habla con Supabase.
+3. **Datos** (`wash-jobs.repository.ts`) envía el cambio a `PATCH /api/washes/:id/status`.
+4. **Infraestructura** (`infrastructure/api/apiClient.ts`) adjunta el JWT y el negocio activo; el backend valida el token y usa Supabase con RLS.
 5. **Dominio** (`domain/rules/wash-status.rules.ts`) define el flujo ordenado `pending` → `in_progress` → `completed` → `delivered`; no permite saltos ni retrocesos.
 
 ## Base de datos (Supabase)
 
 El modelo relacional tiene `wash_jobs` como entidad central, con tablas de apoyo para
-lavadores, precios, adiciones y trazabilidad (ver migraciones en `backend/supabase/migrations/`):
+lavadores, precios, adiciones y trazabilidad (ver migraciones en `database/supabase/migrations/`):
 
 | Columna | Tipo | Notas |
 |---|---|---|
@@ -133,9 +141,9 @@ verificación están documentados abajo.
 Estas migraciones no se aplican automáticamente. En Supabase, abre **SQL Editor** y ejecuta
 solo las migraciones aún pendientes, respetando este orden:
 
-1. `backend/supabase/migrations/20261117150000_add_delivered_wash_status.sql`
-2. `backend/supabase/migrations/20261117160000_add_wash_job_status_history.sql`
-3. `backend/supabase/migrations/20261117170000_persist_wash_job_addons.sql`
+1. `database/supabase/migrations/20261117150000_add_delivered_wash_status.sql`
+2. `database/supabase/migrations/20261117160000_add_wash_job_status_history.sql`
+3. `database/supabase/migrations/20261117170000_persist_wash_job_addons.sql`
 
 La primera agrega el enum `delivered` y protege el avance del estado. La segunda crea
 `wash_job_status_history`, habilita RLS con lectura limitada al propietario, y registra el
@@ -152,7 +160,7 @@ su seguimiento de estado comienza con cambios posteriores a esa migración.
 
 Antes del despliegue, realiza un respaldo de la base y confirma en Supabase que las migraciones
 anteriores de estados, historial y adiciones ya fueron aplicadas. El nuevo archivo
-`backend/supabase/migrations/20261117180000_business_memberships_and_roles.sql` es una migración
+`database/supabase/migrations/20261117180000_business_memberships_and_roles.sql` es una migración
 aditiva y debe ejecutarse **después** de esas tres, desde el SQL Editor o mediante el flujo de
 migraciones ya usado por el proyecto. No edites ni vuelvas a ejecutar migraciones anteriores.
 
@@ -203,9 +211,12 @@ Ejecuta estos comandos desde la carpeta `frontend/`.
 
 ```
 ├── backend/
-│   └── supabase/
-│       ├── config.toml    # Configuración del proyecto Supabase
-│       └── migrations/    # Historial de cambios a la base de datos (SQL)
+│   ├── src/               # API Express y middleware de autenticación
+│   ├── package.json
+│   └── tsconfig.json
+├── database/
+│   ├── supabase/          # Configuración, funciones y migraciones SQL
+│   └── autolavado_semantico.ttl
 ├── frontend/
 │   ├── android/           # Proyecto nativo Android (Capacitor)
 │   ├── ios/               # Proyecto nativo iOS (Capacitor)
@@ -217,6 +228,6 @@ Ejecuta estos comandos desde la carpeta `frontend/`.
 └── METODOLOGIA.md
 ```
 
-El backend de esta aplicación es Supabase (base de datos y autenticación); actualmente
-no hay un servidor API propio. El cliente web se conecta a Supabase usando las políticas
-RLS definidas por las migraciones.
+El servidor API propio está inicializado en `backend/`; el frontend aún conserva su
+integración actual con Supabase durante esta primera fase. Las migraciones y demás
+recursos de persistencia se encuentran en `database/`.

@@ -64,13 +64,14 @@ export function useWashers(
         return;
       }
       try {
-        await deleteWasher(id);
+        if (!businessId) return;
+        await deleteWasher(businessId, id);
         setWashers((prev) => prev.filter((w) => w.id !== id));
       } catch {
         toast({ variant: "destructive", title: "Error", description: "No se pudo eliminar el lavador." });
       }
     },
-    [role, toast]
+    [businessId, role, toast]
   );
 
   return { washers, loading, addWasher, removeWasher };

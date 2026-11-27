@@ -21,6 +21,6 @@
 ## Estado de despliegue
 
 La migración
-`backend/supabase/migrations/20261117180000_business_memberships_and_roles.sql` no fue
+`database/supabase/migrations/20261117180000_business_memberships_and_roles.sql` no fue
 ejecutada. Aplicarla y verificar RLS en staging/producción sigue siendo una acción manual
 en Supabase; ver las instrucciones de despliegue en `README.md`.

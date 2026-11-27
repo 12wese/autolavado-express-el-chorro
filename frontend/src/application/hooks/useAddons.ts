@@ -47,7 +47,7 @@ export function useAddons(
         return false;
       }
       try {
-        const addon = await createAddon(businessId, userId, {
+        const addon = await createAddon(businessId, {
           name: result.data.name,
           price: result.data.price,
         });
@@ -68,13 +68,14 @@ export function useAddons(
         return;
       }
       try {
-        await deleteAddon(id);
+        if (!businessId) return;
+        await deleteAddon(businessId, id);
         setAddons((prev) => prev.filter((a) => a.id !== id));
       } catch {
         toast({ variant: "destructive", title: "Error", description: "No se pudo eliminar la adición." });
       }
     },
-    [role, toast]
+    [businessId, role, toast]
   );
 
   return { addons, loading, addAddon, removeAddon };

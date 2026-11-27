@@ -23,7 +23,7 @@ export function useSemanticGraph(businessId: string) {
   const refreshHealth = useCallback(async () => {
     setCheckingConnection(true);
     try {
-      setConnected(await checkFusekiHealth());
+      setConnected(await checkFusekiHealth(businessId));
       setConnectionError(null);
     } catch (error) {
       setConnected(false);
@@ -33,7 +33,7 @@ export function useSemanticGraph(businessId: string) {
     } finally {
       setCheckingConnection(false);
     }
-  }, []);
+  }, [businessId]);
 
   useEffect(() => {
     void refreshHealth();
@@ -45,7 +45,7 @@ export function useSemanticGraph(businessId: string) {
     setQuerying(true);
     setQueryError(null);
     try {
-      setResults(await runSparqlQuery(query));
+      setResults(await runSparqlQuery(query, businessId));
     } catch (error) {
       setResults(null);
       setQueryError(
@@ -54,7 +54,7 @@ export function useSemanticGraph(businessId: string) {
     } finally {
       setQuerying(false);
     }
-  }, []);
+  }, [businessId]);
 
   const synchronizeExistingJobs = useCallback(async () => {
     setSynchronizing(true);

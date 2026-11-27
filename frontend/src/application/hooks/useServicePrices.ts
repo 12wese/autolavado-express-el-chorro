@@ -44,7 +44,7 @@ export function useServicePrices(
         return false;
       }
       try {
-        const updated = await upsertServicePrice(businessId, userId, {
+        const updated = await upsertServicePrice(businessId, {
           car_type: carType,
           wash_type: washType,
           price,

@@ -27,7 +27,7 @@ export function WashHistory({ businessId, role, washerId }: WashHistoryProps) {
     ? loadedJobs.filter((job) => job.washer_id === washerId)
     : loadedJobs;
   const { historyByJobId, loading: historyLoading, error: historyError } =
-    useWashJobStatusHistory(jobs.map((job) => job.id));
+    useWashJobStatusHistory(businessId, jobs.map((job) => job.id));
 
   const daySummaries = summarizeByDay(jobs);
 

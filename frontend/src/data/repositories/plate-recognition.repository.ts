@@ -1,10 +1,5 @@
-import { supabase } from "@/infrastructure/supabase/client";
+import { apiClient } from "@/infrastructure/api/apiClient";
 
 export async function recognizePlateFromImage(imageBase64: string): Promise<unknown> {
-  const { data, error } = await supabase.functions.invoke("recognize-plate", {
-    body: { imageBase64 },
-  });
-
-  if (error) throw error;
-  return data;
+  return apiClient.post<unknown>("/api/vision/recognize-plate", { imageBase64 });
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { WashJobStatusHistory } from "@/domain/entities/wash-job-status-history.entity";
 import { fetchWashJobStatusHistory } from "@/data/repositories/wash-jobs.repository";
 
-export function useWashJobStatusHistory(washJobIds: string[]) {
+export function useWashJobStatusHistory(businessId: string, washJobIds: string[]) {
   const jobIdsKey = useMemo(
     () => [...new Set(washJobIds)].sort().join(","),
     [washJobIds],
@@ -27,7 +27,7 @@ export function useWashJobStatusHistory(washJobIds: string[]) {
     setLoading(true);
     setError(null);
     setHistory([]);
-    fetchWashJobStatusHistory(ids)
+    fetchWashJobStatusHistory(businessId, ids)
       .then((data) => {
         if (active) setHistory(data);
       })
@@ -42,7 +42,7 @@ export function useWashJobStatusHistory(washJobIds: string[]) {
     return () => {
       active = false;
     };
-  }, [jobIdsKey]);
+  }, [businessId, jobIdsKey]);
 
   const historyByJobId = useMemo(() => {
     return history.reduce<Record<string, WashJobStatusHistory[]>>((grouped, event) => {

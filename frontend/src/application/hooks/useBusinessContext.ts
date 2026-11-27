@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CurrentBusinessMembership } from "@/domain/entities/business-membership.entity";
 import {
-  acceptPendingBusinessMemberships,
   createBusiness,
   fetchCurrentBusinessMemberships,
 } from "@/data/repositories/business.repository";
@@ -25,8 +24,7 @@ export function useBusinessContext(userId: string | null) {
     setLoading(true);
     setError(null);
     try {
-      await acceptPendingBusinessMemberships();
-      const currentMemberships = await fetchCurrentBusinessMemberships(userId);
+      const currentMemberships = await fetchCurrentBusinessMemberships();
       setMemberships(currentMemberships);
       const storedBusinessId = window.localStorage.getItem(ACTIVE_BUSINESS_KEY);
       const selectedMembership = currentMemberships.find(

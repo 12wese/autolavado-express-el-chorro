@@ -9,10 +9,10 @@ Function al proveedor configurado para realizar la inferencia. Verifica sus cond
 de privacidad y retención antes de usar imágenes reales; no incluyas placas/imágenes reales
 en fixtures o logs.
 
-1. Copia `backend/supabase/.env.example` a un archivo local ignorado por Git, por ejemplo
-   `backend/supabase/.env.local`, y agrega allí la clave del proveedor. No uses ni pegues la
+1. Copia `database/supabase/.env.example` a un archivo local ignorado por Git, por ejemplo
+   `database/supabase/.env.local`, y agrega allí la clave del proveedor. No uses ni pegues la
    clave en código, documentación, terminal compartida o frontend.
-2. Desde `backend/supabase/`, inicia el stack local con `supabase start`.
+2. Desde `database/supabase/`, inicia el stack local con `supabase start`.
 3. Sirve la función con el archivo local de variables:
 
    ```sh

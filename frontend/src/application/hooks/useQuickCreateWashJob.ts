@@ -13,12 +13,8 @@ import {
 import { quickWashJobSchema } from "@/domain/validators/quick-wash-job.validator";
 import {
   createWashJobAndFetchReceipt,
-  WashJobReceiptUnavailableError,
 } from "@/data/repositories/wash-jobs.repository";
-import {
-  scheduleWashJobSemanticSync,
-  scheduleWashJobSemanticSyncById,
-} from "@/application/services/wash-job-semantic-sync.service";
+import { scheduleWashJobSemanticSync } from "@/application/services/wash-job-semantic-sync.service";
 
 interface QuickWashJobFormValues {
   carType: string;
@@ -30,7 +26,6 @@ interface QuickWashJobFormValues {
 
 export type QuickWashJobResult =
   | { status: "created"; job: WashJob }
-  | { status: "receipt-unavailable"; jobId: string }
   | null;
 
 // El QR aporta la placa; el admin confirma los datos y la tarifa del negocio.
@@ -99,12 +94,7 @@ export function useQuickCreateWashJob(
       scheduleWashJobSemanticSync(createdJob);
       onCreated();
       return { status: "created", job: createdJob };
-    } catch (error) {
-      if (error instanceof WashJobReceiptUnavailableError) {
-        scheduleWashJobSemanticSyncById(businessId, error.washJobId);
-        onCreated();
-        return { status: "receipt-unavailable", jobId: error.washJobId };
-      }
+    } catch {
       toast({
         variant: "destructive",
         title: "Error",

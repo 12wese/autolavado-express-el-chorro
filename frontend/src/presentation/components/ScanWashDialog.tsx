@@ -67,7 +67,6 @@ export function ScanWashDialog({
   const [washerId, setWasherId] = useState<string | null>(null);
   const [addonIds, setAddonIds] = useState<string[]>([]);
   const [ticket, setTicket] = useState<WashJob | null>(null);
-  const [receiptUnavailableJobId, setReceiptUnavailableJobId] = useState<string | null>(null);
   const scanLockRef = useRef(false);
   const scanSessionRef = useRef(0);
 
@@ -118,7 +117,6 @@ export function ScanWashDialog({
     scanSessionRef.current += 1;
     scanLockRef.current = false;
     setTicket(null);
-    setReceiptUnavailableJobId(null);
     resetLookup();
     setCarType("");
     setWashType("");
@@ -151,9 +149,6 @@ export function ScanWashDialog({
       prices,
     );
     if (created?.status === "created") setTicket(created.job);
-    if (created?.status === "receipt-unavailable") {
-      setReceiptUnavailableJobId(created.jobId);
-    }
   };
 
   return (
@@ -162,13 +157,11 @@ export function ScanWashDialog({
         <DialogHeader className="px-6 pt-6 pb-4 shrink-0 border-b">
           <DialogTitle className="font-display flex items-center gap-2">
             <ScanLine className="w-5 h-5 text-primary" />
-            {ticket || receiptUnavailableJobId ? "Trabajo creado" : "Registrar vehículo por placa"}
+            {ticket ? "Trabajo creado" : "Registrar vehículo por placa"}
           </DialogTitle>
           <DialogDescription>
             {ticket
               ? "El trabajo quedó registrado y este comprobante muestra los datos guardados."
-              : receiptUnavailableJobId
-              ? "El trabajo quedó guardado, pero no fue posible recuperar todos los datos del comprobante."
               : vehicle
               ? `Confirma los datos para registrar el vehículo ${vehicle.plate}.`
               : "Escanea un QR o apunta la cámara a una placa para consultar su historial."}
@@ -184,20 +177,7 @@ export function ScanWashDialog({
           />
         )}
 
-        {receiptUnavailableJobId && (
-          <div className="space-y-4 p-6">
-            <p role="alert" className="text-sm text-destructive">
-              El trabajo se guardó correctamente, pero no se pudo cargar su comprobante.
-              No lo registres de nuevo. Actualiza el tablero y contacta al administrador
-              si necesitas el detalle. Referencia: {receiptUnavailableJobId}
-            </p>
-            <Button type="button" className="w-full" onClick={() => handleClose(false)}>
-              Cerrar
-            </Button>
-          </div>
-        )}
-
-        {!ticket && !receiptUnavailableJobId && !vehicle && (
+        {!ticket && !vehicle && (
           <div className="space-y-4 px-6 py-4">
             <div className="space-y-2">
               <Label htmlFor="manual-scan-plate">O ingresa la placa manualmente</Label>
@@ -244,7 +224,7 @@ export function ScanWashDialog({
           </div>
         )}
 
-        {!ticket && !receiptUnavailableJobId && vehicle && (
+        {!ticket && vehicle && (
           <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
             <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
               <div className="flex items-center gap-2 text-sm bg-muted rounded-md px-3 py-2">

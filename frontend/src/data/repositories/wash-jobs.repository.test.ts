@@ -1,147 +1,98 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { NewWashJobInput } from "@/domain/entities/wash-job.entity";
 
-const { rpcMock, fromMock, selectMock, eqMock, singleMock, inMock, orderMock } = vi.hoisted(() => ({
-  rpcMock: vi.fn(),
-  fromMock: vi.fn(),
-  selectMock: vi.fn(),
-  eqMock: vi.fn(),
-  singleMock: vi.fn(),
-  inMock: vi.fn(),
-  orderMock: vi.fn(),
+const { getMock, postMock } = vi.hoisted(() => ({
+  getMock: vi.fn(),
+  postMock: vi.fn(),
 }));
 
-vi.mock("@/infrastructure/supabase/client", () => ({
-  supabase: { rpc: rpcMock, from: fromMock },
+vi.mock("@/infrastructure/api/apiClient", () => ({
+  apiClient: { get: getMock, post: postMock },
 }));
 
 import {
   createWashJob,
   createWashJobAndFetchReceipt,
   fetchRecentWashJobsByPlate,
-  WashJobReceiptUnavailableError,
+  fetchWashStats,
 } from "./wash-jobs.repository";
 
-describe("fetchRecentWashJobsByPlate", () => {
+const createdJob = {
+  id: "wash-job-id",
+  business_id: "business-id",
+  license_plate: "ABC123",
+  addons: [],
+};
+
+describe("wash jobs API repository", () => {
   beforeEach(() => {
-    rpcMock.mockReset();
-    rpcMock.mockResolvedValue({ data: [], error: null });
+    getMock.mockReset();
+    postMock.mockReset();
   });
 
-  it("uses the business-scoped RPC with a normalized plate", async () => {
-    await fetchRecentWashJobsByPlate("business-id", "abc-123");
+  it("requests recent washes with a normalized plate and business context", async () => {
+    getMock.mockResolvedValue([createdJob]);
 
-    expect(rpcMock).toHaveBeenCalledWith("find_recent_wash_jobs_by_plate", {
-      p_business_id: "business-id",
-      p_plate: "ABC123",
-    });
-  });
-});
-
-describe("createWashJob", () => {
-  beforeEach(() => {
-    rpcMock.mockReset();
-    rpcMock.mockResolvedValue({ data: "wash-job-id", error: null });
-    fromMock.mockReset();
-    selectMock.mockReset().mockReturnThis();
-    eqMock.mockReset().mockReturnThis();
-    singleMock.mockReset().mockResolvedValue({
-      data: {
-        id: "wash-job-id",
-        user_id: "user-id",
-        created_by_user_id: "user-id",
-        business_id: "business-id",
-        washer_id: "washer-id",
-        car_type: "Sedán",
-        wash_type: "Completo",
-        washer_name: "Carlos",
-        license_plate: "ABC-123",
-        price: 12,
-        status: "pending",
-        created_at: "2026-11-20T15:00:00.000Z",
-        updated_at: "2026-11-20T15:00:00.000Z",
-      },
-      error: null,
-    });
-    inMock.mockReset().mockReturnThis();
-    orderMock.mockReset().mockResolvedValue({ data: [], error: null });
-    fromMock.mockImplementation(() => ({
-      select: selectMock,
-      eq: eqMock,
-      single: singleMock,
-      in: inMock,
-      order: orderMock,
-    }));
+    await expect(fetchRecentWashJobsByPlate("business-id", "abc-123"))
+      .resolves.toEqual([createdJob]);
+    expect(getMock).toHaveBeenCalledWith(
+      "/api/washes",
+      expect.objectContaining({
+        businessId: "business-id",
+        query: expect.any(URLSearchParams),
+      }),
+    );
+    const query = getMock.mock.calls[0][1].query as URLSearchParams;
+    expect(query.get("plate")).toBe("ABC123");
   });
 
-  it("returns the persisted ID for background follow-up", async () => {
-    const washJobId = await createWashJob("business-id", {
+  it("posts a new job and returns its persisted ID", async () => {
+    postMock.mockResolvedValue(createdJob);
+
+    const input: NewWashJobInput = {
       washer_id: null,
       car_type: "Automóvil",
       wash_type: "Lavada General",
       license_plate: "ABC123",
       base_price: 15000,
       addon_ids: [],
-    });
-
-    expect(washJobId).toBe("wash-job-id");
-  });
-
-  it("persists the job and selected addons through the atomic RPC", async () => {
-    const input: NewWashJobInput = {
-      washer_id: "washer-id",
-      car_type: "Sedán",
-      wash_type: "Completo",
-      license_plate: "ABC-123",
-      base_price: 10,
-      addon_ids: ["addon-id"],
     };
-
-    const createdJob = await createWashJobAndFetchReceipt("business-id", input);
-
-    expect(rpcMock).toHaveBeenCalledWith("create_wash_job_with_addons", {
-      p_business_id: "business-id",
-      p_washer_id: "washer-id",
-      p_car_type: "Sedán",
-      p_wash_type: "Completo",
-      p_license_plate: "ABC-123",
-      p_base_price: 10,
-      p_addon_ids: ["addon-id"],
-    });
-    expect(createdJob.created_at).toBe("2026-11-20T15:00:00.000Z");
-    expect(createdJob.addons).toEqual([]);
-    expect(eqMock).toHaveBeenNthCalledWith(1, "business_id", "business-id");
-    expect(eqMock).toHaveBeenNthCalledWith(2, "id", "wash-job-id");
+    await expect(createWashJob("business-id", input)).resolves.toBe("wash-job-id");
+    expect(postMock).toHaveBeenCalledWith("/api/washes", input, { businessId: "business-id" });
   });
 
-  it("distinguishes a persisted job whose receipt could not be fetched", async () => {
-    singleMock.mockResolvedValue({ data: null, error: new Error("read failed") });
+  it("returns the job payload from the create endpoint for quick receipts", async () => {
+    postMock.mockResolvedValue(createdJob);
 
-    const creation = createWashJobAndFetchReceipt("business-id", {
-        washer_id: null,
-        car_type: "Automóvil",
-        wash_type: "Lavada General",
-        license_plate: "ABC123",
-        base_price: 15000,
-        addon_ids: [],
-    });
-    await expect(creation).rejects.toBeInstanceOf(WashJobReceiptUnavailableError);
-    await expect(creation).rejects.toHaveProperty("washJobId", "wash-job-id");
+    const input: NewWashJobInput = {
+      washer_id: null,
+      car_type: "Automóvil",
+      wash_type: "Lavada General",
+      license_plate: "ABC123",
+      base_price: 15000,
+      addon_ids: [],
+    };
+    await expect(createWashJobAndFetchReceipt("business-id", input)).resolves.toEqual(createdJob);
   });
 
-  it("surfaces RPC failures", async () => {
-    const error = new Error("RPC failed");
-    rpcMock.mockResolvedValue({ data: null, error });
+  it("requests monthly statistics from the API", async () => {
+    getMock.mockResolvedValue({
+      total_jobs: 1,
+      total_earnings: 15000,
+      washer_commission: 6000,
+      business_commission: 9000,
+      by_washer: [],
+    });
 
-    await expect(
-      createWashJob("user-id", {
-        washer_id: null,
-        car_type: "Sedán",
-        wash_type: "Completo",
-        license_plate: "ABC-123",
-        base_price: 10,
-        addon_ids: [],
+    await fetchWashStats("business-id", "2026-11");
+
+    expect(getMock).toHaveBeenCalledWith(
+      "/api/washes/stats",
+      expect.objectContaining({
+        businessId: "business-id",
+        query: expect.any(URLSearchParams),
       }),
-    ).rejects.toBe(error);
+    );
+    expect((getMock.mock.calls[0][1].query as URLSearchParams).get("month")).toBe("2026-11");
   });
 });

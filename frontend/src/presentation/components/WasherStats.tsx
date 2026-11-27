@@ -6,7 +6,8 @@ import { Car, DollarSign, Users, ChevronLeft, ChevronRight, CalendarDays } from 
 import { format, startOfMonth, addMonths } from "date-fns";
 import { es } from "date-fns/locale";
 import { useMonthlyWashJobs } from "@/application/hooks/useMonthlyWashJobs";
-import { businessEarnings, formatCurrency, summarizeByWasher, washerEarnings } from "@/application/services/wash-stats.service";
+import { useMonthlyWashStats } from "@/application/hooks/useMonthlyWashStats";
+import { businessEarnings, formatCurrency, washerEarnings } from "@/application/services/wash-stats.service";
 import { WASH_STATUS_LABELS } from "@/domain/enums/wash-status.enum";
 import type { BusinessRole } from "@/domain/enums/business-role.enum";
 
@@ -19,15 +20,19 @@ interface WasherStatsProps {
 export function WasherStats({ businessId, role, washerId }: WasherStatsProps) {
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
   const { jobs: loadedJobs, loading } = useMonthlyWashJobs(businessId, currentMonth);
+  const { stats, loading: statsLoading, error: statsError } =
+    useMonthlyWashStats(businessId, currentMonth);
   const allJobs = role === "washer"
     ? loadedJobs.filter((job) => job.washer_id === washerId)
     : loadedJobs;
 
-  const washerSummaries = summarizeByWasher(allJobs);
-  const totalVehicles = allJobs.length;
-  const totalEarnings = allJobs.reduce((sum, job) => sum + (job.price || 0), 0);
+  const washerSummaries = (stats?.by_washer ?? []).filter(
+    (washer) => role !== "washer" || washer.washer_id === washerId,
+  );
+  const totalVehicles = washerSummaries.reduce((sum, washer) => sum + washer.total_jobs, 0);
+  const totalEarnings = washerSummaries.reduce((sum, washer) => sum + washer.total_earnings, 0);
 
-  if (loading) {
+  if (loading || statsLoading) {
     return (
       <div className="flex items-center justify-center p-8">
         <div className="animate-pulse text-muted-foreground">Cargando estadísticas...</div>
@@ -40,6 +45,7 @@ export function WasherStats({ businessId, role, washerId }: WasherStatsProps) {
 
   return (
     <div className="space-y-6">
+      {statsError && <p role="alert" className="text-sm text-destructive">{statsError}</p>}
       {/* Month navigation */}
       <div className="flex items-center justify-center gap-4">
         <Button variant="outline" size="icon" onClick={() => setCurrentMonth((m) => addMonths(m, -1))}>

@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { invokeMock } = vi.hoisted(() => ({
-  invokeMock: vi.fn(),
+const { getMock, postMock } = vi.hoisted(() => ({
+  getMock: vi.fn(),
+  postMock: vi.fn(),
 }));
 
-vi.mock("@/infrastructure/supabase/client", () => ({
-  supabase: { functions: { invoke: invokeMock } },
+vi.mock("@/infrastructure/api/apiClient", () => ({
+  apiClient: { get: getMock, post: postMock },
 }));
 
 import {
@@ -14,6 +15,8 @@ import {
   syncWashJobToFuseki,
 } from "./fuseki.repository";
 
+const businessId = "business-id";
+const selectQuery = "SELECT ?plate WHERE { ?vehicle ?p ?plate }";
 const washJob = {
   id: "job-id",
   plate: "ABC123",
@@ -24,89 +27,76 @@ const washJob = {
   status: "pending",
 };
 
-describe("Fuseki repository proxy", () => {
+describe("Fuseki API repository", () => {
   beforeEach(() => {
-    invokeMock.mockReset();
+    getMock.mockReset();
+    postMock.mockReset();
   });
 
-  it("checks health through the Supabase Edge Function", async () => {
-    invokeMock.mockResolvedValue({ data: { connected: true }, error: null });
+  it("checks Fuseki health through the API", async () => {
+    getMock.mockResolvedValue({ connected: true });
 
-    await expect(checkFusekiHealth()).resolves.toBe(true);
-    expect(invokeMock).toHaveBeenCalledWith("fuseki-proxy", {
-      body: { action: "health" },
-    });
+    await expect(checkFusekiHealth(businessId)).resolves.toBe(true);
+    expect(getMock).toHaveBeenCalledWith("/api/semantic/health", { businessId });
   });
 
-  it("runs SELECT queries through the proxy and returns parsed bindings", async () => {
+  it("runs SELECT queries and returns parsed bindings", async () => {
     const results = {
       head: { vars: ["plate"] },
       results: { bindings: [{ plate: { type: "literal", value: "ABC123" } }] },
     };
-    invokeMock.mockResolvedValue({ data: results, error: null });
+    postMock.mockResolvedValue(results);
 
-    await expect(runSparqlQuery("SELECT ?plate WHERE { ?vehicle ?p ?plate }"))
-      .resolves.toEqual(results);
-    expect(invokeMock).toHaveBeenCalledWith("fuseki-proxy", {
-      body: { action: "query", query: "SELECT ?plate WHERE { ?vehicle ?p ?plate }" },
-    });
+    await expect(runSparqlQuery(selectQuery, businessId)).resolves.toEqual(results);
+    expect(postMock).toHaveBeenCalledWith(
+      "/api/semantic/query",
+      { query: selectQuery },
+      { businessId },
+    );
   });
 
   it("extracts bindings nested under response.data", async () => {
     const binding = { type: "literal", value: "ABC123" };
-    invokeMock.mockResolvedValue({
-      data: { data: { head: { vars: ["plate"] }, results: { bindings: [{ plate: binding }] } } },
-      error: null,
+    postMock.mockResolvedValue({
+      data: { head: { vars: ["plate"] }, results: { bindings: [{ plate: binding }] } },
     });
 
-    await expect(runSparqlQuery("SELECT ?plate WHERE { ?vehicle ?p ?plate }"))
-      .resolves.toMatchObject({
-        head: { vars: ["plate"] },
-        results: { bindings: [{ plate: binding }] },
-      });
+    await expect(runSparqlQuery(selectQuery, businessId)).resolves.toMatchObject({
+      head: { vars: ["plate"] },
+      results: { bindings: [{ plate: binding }] },
+    });
   });
 
   it("accepts a direct array of result bindings", async () => {
-    invokeMock.mockResolvedValue({
-      data: [{ plate: "ABC123", serviceType: "Lavada" }],
-      error: null,
-    });
+    postMock.mockResolvedValue([{ plate: "ABC123", serviceType: "Lavada" }]);
 
-    await expect(runSparqlQuery("SELECT ?plate WHERE { ?vehicle ?p ?plate }"))
-      .resolves.toMatchObject({
-        head: { vars: ["plate", "serviceType"] },
-        results: {
-          bindings: [{
-            plate: { type: "literal", value: "ABC123" },
-            serviceType: { type: "literal", value: "Lavada" },
-          }],
-        },
-      });
-  });
-
-  it("sends the mapped wash job as an update through the proxy", async () => {
-    invokeMock.mockResolvedValue({ data: { ok: true }, error: null });
-
-    await syncWashJobToFuseki(washJob);
-
-    expect(invokeMock).toHaveBeenCalledWith("fuseki-proxy", {
-      body: expect.objectContaining({
-        action: "update",
-        update: expect.stringContaining("INSERT DATA"),
-      }),
+    await expect(runSparqlQuery(selectQuery, businessId)).resolves.toMatchObject({
+      head: { vars: ["plate", "serviceType"] },
+      results: {
+        bindings: [{
+          plate: { type: "literal", value: "ABC123" },
+          serviceType: { type: "literal", value: "Lavada" },
+        }],
+      },
     });
   });
 
-  it("preserves the proxy HTTP error details", async () => {
-    const context = new Response(JSON.stringify({ error: "Fuseki returned HTTP 503." }), {
-      status: 502,
-    });
-    const error = Object.assign(new Error("Edge Function returned a non-2xx status code"), {
-      context,
-    });
-    invokeMock.mockResolvedValue({ data: null, error });
+  it("sends mapped wash-job updates with the business context", async () => {
+    postMock.mockResolvedValue({ ok: true });
 
-    await expect(checkFusekiHealth())
-      .rejects.toThrow("HTTP 502: Fuseki returned HTTP 503.");
+    await syncWashJobToFuseki(washJob, businessId);
+
+    expect(postMock).toHaveBeenCalledWith(
+      "/api/semantic/update",
+      { update: expect.stringContaining("INSERT DATA") },
+      { businessId },
+    );
+  });
+
+  it("preserves API errors", async () => {
+    const error = new Error("Fuseki returned HTTP 503. (HTTP 502)");
+    getMock.mockRejectedValue(error);
+
+    await expect(checkFusekiHealth(businessId)).rejects.toBe(error);
   });
 });

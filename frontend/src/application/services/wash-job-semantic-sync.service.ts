@@ -20,7 +20,7 @@ function getSemanticSyncInput(washJob: WashJob) {
 async function syncInBackground(washJobPromise: Promise<WashJob>): Promise<void> {
   try {
     const washJob = await washJobPromise;
-    await syncWashJobToFuseki(getSemanticSyncInput(washJob));
+    await syncWashJobToFuseki(getSemanticSyncInput(washJob), washJob.business_id);
   } catch (error) {
     console.warn("No se pudo sincronizar el trabajo con el grafo semántico.", error);
   }
@@ -52,7 +52,7 @@ export async function syncExistingWashJobsToFuseki(
 
   for (const washJob of washJobs) {
     try {
-      await syncWashJobToFuseki(getSemanticSyncInput(washJob));
+      await syncWashJobToFuseki(getSemanticSyncInput(washJob), washJob.business_id);
       result.synced += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error desconocido";

@@ -22,14 +22,6 @@ export default defineConfig(({ mode }) => {
         "Define VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY en frontend/.env.development.local.",
       );
     }
-
-    const hostname = new URL(supabaseUrl).hostname;
-    if (!["localhost", "127.0.0.1", "::1"].includes(hostname)) {
-      throw new Error(
-        "El servidor de desarrollo solo puede conectarse a Supabase local. " +
-          "Configura VITE_SUPABASE_URL como http://127.0.0.1:54321.",
-      );
-    }
   }
 
   return {

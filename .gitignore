@@ -31,10 +31,11 @@ dev-dist
 .env*
 !.env.example
 
-backend/semantic/data/
-backend/semantic/fuseki-base/
-backend/supabase/functions/.env
+database/semantic/data/
+database/semantic/fuseki-base/
+database/supabase/functions/.env
 
+backend/.env
 *.zip
 
 *.zip

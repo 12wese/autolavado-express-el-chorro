@@ -3,7 +3,7 @@
 ## Estado
 
 Implementado en código y en la migración
-`backend/supabase/migrations/20261117180000_business_memberships_and_roles.sql`.
+`database/supabase/migrations/20261117180000_business_memberships_and_roles.sql`.
 La migración no se ha aplicado en Supabase; el aislamiento multi-tenant no se considera
 activo en ningún entorno hasta aplicar y validar ese cambio.
 
